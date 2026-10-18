@@ -101,6 +101,7 @@ README 安装说明随后在纯文档提交 `27c80639e746f069697b509d0c20c752dcb
 - [x] README 已更新 Linux/Windows 用法和预先安装系统级 TeX 工具的条件。
 - [x] 以并发新增的 `PROMPT.md` 为最新基底提交，未覆盖该文件。运行脚本代码提交：`544fdc906e28bca922005f0c3dcc0e4052bc31dc`。
 - [x] 远端 CI Python 作业通过（包含新增启动脚本检查）。
-- [ ] 远端 CI 本轮 LaTeX 作业状态需在最终运行结果中继续确认；脚本自身在 Windows PowerShell 及用户本机尚未端到端实测，不标记为通过。
+- [x] 本轮 GitHub Actions Python 与 LaTeX 作业均 success：<https://github.com/ncut-d1z/RealMotion/actions/runs/39122069891>。
+- [ ] 新的一键脚本自身在 Windows PowerShell 和用户本机尚未端到端实测；不把 CI 中执行的原有 Python/TeX 命令等同于跨平台脚本验证。
 
 本次新增脚本有操作系统差异：Windows 需要正确配置 TeX 的 PATH；Linux 需要 `python3-venv` 及字体包。脚本不会使用 sudo、apt、强制清理旧产物或上传文件。`run.sh` 本身的 shell 解析与 `run.ps1` 的 PowerShell 解析仍需在各目标系统验证，不能将 Python CI 等同于跨平台端到端测试。
