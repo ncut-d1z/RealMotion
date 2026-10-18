@@ -126,7 +126,7 @@ E07 的结果尤其不宜只挑有利工况：
 需要 XeLaTeX、ctex、Fandol 字体及 latexmk。Ubuntu 的一组安装与编译命令：
 
 ```bash
-sudo apt-get install texlive-xetex texlive-lang-chinese latexmk
+sudo apt-get install texlive-xetex texlive-lang-chinese texlive-fonts-recommended latexmk
 latexmk -xelatex -interaction=nonstopmode -halt-on-error -file-line-error theory.tex
 python scripts/check_latex_log.py build/theory.log
 ```
