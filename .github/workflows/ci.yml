@@ -58,7 +58,11 @@ jobs:
       - name: Install XeLaTeX, Chinese fonts and latexmk
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends texlive-xetex texlive-lang-chinese latexmk
+          sudo apt-get install -y --no-install-recommends texlive-xetex texlive-lang-chinese texlive-fonts-recommended latexmk
+      - name: Check required TeX font assets
+        run: |
+          kpsewhich pzdr.tfm
+          kpsewhich FandolSong-Regular.otf
       - name: Compile standalone ctexart without shell escape
         run: latexmk -xelatex -interaction=nonstopmode -halt-on-error -file-line-error theory.tex
       - name: Check final log and source-only policy
