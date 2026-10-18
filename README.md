@@ -140,3 +140,27 @@ python scripts/check_latex_log.py build/theory.log
 **仅靠 gitignore 不够**：`python scripts/check_repository.py` 检查 `git ls-files`，按源码/配置白名单拒绝生成目录、未知类型、二进制、符号链接。因此 `git add -f result.npz` 也会导致 CI 失败。不要用强制添加绕过政策；新增合法源码类型应显式评审并修改检查器。
 
 工作流在 main 推送、PR 和手动触发时检查；仅修改四个根目录 Markdown 说明文件不会启动数值/编译任务。两个标准 Ubuntu 作业，分别 10/15 分钟超时，过时运行取消，令牌只读；官方 actions 固定提交 SHA，不设定时轮询，不上传数据、图片或 PDF artifact。实际远端 CI 状态请查看 Actions 与 PROGRESS，不把本地通过冒充远端通过。
+
+## 一键完整运行（bash / PowerShell）
+
+根目录提供 `run.sh` 和 `run.ps1`。需要事先安装 **Python 3.13+**、`venv`、`pip`、`git`（用于仓库政策检查）及完整 XeLaTeX 环境，包含 `latexmk`、`kpsewhich`、`pzdr.tfm`、Fandol 字体。**不会自动调用 sudo/apt、不会替用户安装系统级 TeX 组件。** Ubuntu 可先执行：
+
+```bash
+sudo apt-get update
+sudo apt-get install python3-venv python3-pip texlive-xetex texlive-lang-chinese texlive-fonts-recommended latexmk
+bash ./run.sh
+```
+
+Windows 请先安装 Python 3.13 和支持中文的 TeX 发行版（例如完整 TeX Live，确保所需工具已在 PATH），再在仓库根目录执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1
+# 或已允许本地脚本执行时：
+.\run.ps1
+```
+
+Windows 上使用 `-ExecutionPolicy Bypass` 仅作用于该 PowerShell 进程；也可以根据本机组织策略设置受信脚本执行方式，不需要修改系统级永久策略。
+
+脚本会定位自身所在的仓库根目录、创建或复用被忽略的 `.venv`、使用该环境的 Python 安装开发依赖，随后做源码文件政策检查（有 Git checkout 时）、`compileall`、pytest、快速和正式实验、XeLaTeX 编译及最终日志检查。任一关键步骤失败即中止，不会自动删掉旧结果或执行 `git clean`。如果已有 `.venv` 使用过旧 Python，请手动重建它。
+
+**重复运行仍会产生新的唯一 `outputs/run-*/` 目录**（各次快速、正式实验各有一份）；`build/theory.pdf` 则由 latexmk 按需重新编译。运行前请确认磁盘空间。脚本运行完成后，不会把 NPZ/PNG/PDF 提交进仓库。
