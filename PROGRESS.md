@@ -92,3 +92,15 @@ README 安装说明随后在纯文档提交 `27c80639e746f069697b509d0c20c752dcb
 ## 明确保留的研究缺口
 
 没有完整像素级 VO、真实轮胎/桨叶参数辨识、道路/风场实验、未知重力鲁棒联合尺度估计或 FastMono 后端接入。接下来的实车工作必须单独采集数据和验证，不能用理想方程的零残差代替。
+
+### 阶段 6：跨平台一键运行入口（2026-10-18）
+
+- [x] 新增根目录 `run.sh`（可执行位）和 `run.ps1`，定位脚本目录，创建/复用 `.venv`，验证 Python 3.13+、latexmk/xelatex/kpsewhich 和必需字体。
+- [x] 顺序执行开发依赖安装、Git checkout 下的源文件政策检查、Python 静态编译、pytest、smoke、full、XeLaTeX 与最终日志校验；任何错误中止。
+- [x] 源文件白名单显式放行根目录两个启动脚本，不放宽对其他 `.sh`/`.ps1` 的限制；新增 `tests/test_launchers.py` 检查。
+- [x] README 已更新 Linux/Windows 用法和预先安装系统级 TeX 工具的条件。
+- [x] 以并发新增的 `PROMPT.md` 为最新基底提交，未覆盖该文件。运行脚本代码提交：`544fdc906e28bca922005f0c3dcc0e4052bc31dc`。
+- [x] 远端 CI Python 作业通过（包含新增启动脚本检查）。
+- [ ] 远端 CI 本轮 LaTeX 作业状态需在最终运行结果中继续确认；脚本自身在 Windows PowerShell 及用户本机尚未端到端实测，不标记为通过。
+
+本次新增脚本有操作系统差异：Windows 需要正确配置 TeX 的 PATH；Linux 需要 `python3-venv` 及字体包。脚本不会使用 sudo、apt、强制清理旧产物或上传文件。`run.sh` 本身的 shell 解析与 `run.ps1` 的 PowerShell 解析仍需在各目标系统验证，不能将 Python CI 等同于跨平台端到端测试。
