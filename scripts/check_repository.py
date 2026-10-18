@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import subprocess
 
 SOURCE_SUFFIXES = {".py", ".toml", ".tex", ".bib", ".md", ".yml", ".yaml"}
-SOURCE_NAMES = {".gitignore", ".gitattributes", ".latexmkrc", "LICENSE", "requirements.txt", "requirements-dev.txt"}
+SOURCE_NAMES = {".gitignore", ".gitattributes", ".latexmkrc", "LICENSE", "requirements.txt", "requirements-dev.txt", "run.sh", "run.ps1"}
 BLOCKED_DIRS = {"outputs", "artifacts", "results", "data", "figures", "generated", "build",
                 "dist", "__pycache__", ".venv", ".pytest_cache"}
 IGNORE_PROBES = ["outputs/anything.weird", "test.npz", "nested/a.CsV", "plot.PNG", "plot.svg",
@@ -17,7 +17,7 @@ def allowed_path(name: str) -> bool:
     p = PurePosixPath(name)
     if any(part.lower() in BLOCKED_DIRS or part.startswith(".staging-") for part in p.parts):
         return False
-    return p.name in SOURCE_NAMES or p.suffix in SOURCE_SUFFIXES
+    return name in SOURCE_NAMES or p.suffix in SOURCE_SUFFIXES
 
 
 def check(root: Path, *, probe_ignores: bool = True) -> list[str]:
