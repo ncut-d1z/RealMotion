@@ -37,3 +37,13 @@ def test_bad_latex_log(line):
 
 def test_clean_latex_log():
     assert not issues("Output written on theory.pdf (10 pages).")
+
+
+def test_runner_context_not_used_in_job_level_env():
+    # GitHub job-level env is evaluated before a runner exists.
+    # This regression check is not a replacement for a complete Actions linter.
+    import re
+    workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
+    for block in re.findall(r"(?m)^    env:\n((?:      .*\n)+)", workflow):
+        assert "runner." not in block
+    assert 'MPLCONFIGDIR=${RUNNER_TEMP}/matplotlib' in workflow
