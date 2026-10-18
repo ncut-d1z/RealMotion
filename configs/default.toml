@@ -1,0 +1,38 @@
+# All values are synthetic teaching/research settings, NOT fitted vendor parameters.
+# Omitted keys use Config defaults; each run records the fully resolved configuration.
+seed = 20261018
+# Requested output step; linspace may shorten it to hit the final time exactly.
+duration_s = 6.0
+sample_period_s = 0.02
+rtol = 1e-9
+atol = 1e-11
+# Rear-axle Ackermann reference frame, SI units except explicitly named degrees.
+wheelbase_m = 2.6
+track_m = 1.6
+speed_mps = 3.0
+steering_deg = 15.0
+steering_rate_degps = 4.0
+# Strong-slip illustrative surrogate, not a calibrated Husky model.
+skid_axle_halfspan_m = 0.28
+skid_track_m = 0.55
+skid_effective_track_m = 0.715
+lever_arm_m = [0.8, 0.15, 0.2]
+# Plus-layout fixed-axis quadrotor. Isotropic drag coefficient has unit kg/s.
+mass_kg = 1.0
+gravity_mps2 = 9.81
+arm_m = 0.2
+inertia_kgm2 = [0.01, 0.01, 0.02]
+torque_thrust_ratio_m = 0.01
+rotor_max_n = 5.0
+tilt_deg = 15.0
+drag_kgps = 0.2
+yaw_rate_radps = 0.5
+# Evaluation truth only; no claim of general metric monocular observability.
+scale_truth = 3.7
+# Pose-observation-level Monte Carlo, NOT a pixel-noise or image-level VO benchmark.
+trials = 20000
+observation_noise_deg = 2.0
+yaw_noise_deg = 0.5
+model_noise_deg = 0.5
+gate_sigma = 3.0
+slip_degrees = [0.0, 2.0, 5.0, 10.0]

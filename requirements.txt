@@ -1,0 +1,6 @@
+# Direct dependency baseline actually tested with CPython 3.13.5.
+# Transitive dependencies are resolved by pip and recorded in the environment;
+# manifest.json records the three numerical/plotting package versions.
+numpy==2.3.5
+scipy==1.17.0
+matplotlib==3.10.8

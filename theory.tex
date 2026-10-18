@@ -1,0 +1,555 @@
+\documentclass[UTF8,a4paper,fontset=fandol,11pt]{ctexart}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,bm,booktabs,longtable}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\setlength{\emergencystretch}{3em}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SO}{\mathrm{SO}(3)}
+\newcommand{\sk}[1]{[#1]_{\times}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\e}{\bm e}
+\newcommand{\vct}[1]{\bm #1}
+\title{真实载具的旋转--平移耦合：\newline 面向无 IMU 单目视觉里程计的运动约束}
+\author{RealMotion 研究笔记}
+\date{2026年10月18日}
+\begin{document}
+\maketitle
+\begin{abstract}
+载具运动并非任意，但“存在物理约束”不意味着平移速度由旋转唯一确定。
+本文区分刚体坐标变换、轮地无滑移约束、推力受限动力学和控制策略相关先验；
+推导 Ackermann 转向、四轮滑移转向、相机杆臂、四旋翼推力方向、条件尺度可观性及软约束接口。
+七组可重入数值实验用于验证恒等式、展示退化及错误先验的偏差，
+不冒充实车实验、像素级 VO 基准或完整状态估计器。
+\end{abstract}
+\tableofcontents
+
+\section{问题边界与资料使用方式}
+本文服务于只使用图像、时间戳和相机标定的单目 VO。
+除非另行说明，不默认有 IMU、轮速计、方向盘角、飞控指令或真实平移距离。
+已知载具类型属于模型先验，不等于已知其每时刻的输入。
+静止初始化只能约束初始状态，不能规定后续速度始终与机头对齐。
+
+表\ref{tab:levels}把容易混淆的约束分开。四个车轮既可能采用 Ackermann 转向，
+也可能采用滑移转向、四轮转向或全向轮；不能仅凭“四轮”选择运动模型。
+轮式机器人分类的文献入口见\cite{campion}；车辆单目 VO 的直接先例见\cite{onepoint,ijcv,priors}。
+
+\begin{table}[htbp]
+\centering\small
+\caption{约束层次及不可越过的前提}\label{tab:levels}
+\begin{tabular}{p{.17\linewidth}p{.36\linewidth}p{.36\linewidth}}
+\toprule
+层次 & 例子 & 有效范围 \\
+\midrule
+刚体恒等式 & 光心速度含角速度叉乘杆臂 & 外参刚性且不随时间变化 \\
+运动学约束 & 常规轮胎侧向接触速度为零 & 理想滚动、接触持续、忽略侧滑 \\
+动力学约束 & 比加速度与四旋翼推力轴平行 & 外力被忽略或正确补偿 \\
+控制/统计先验 & 小侧滑、小俯仰变化、平滑速度 & 具体路面、风场、控制模式与工况 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{references.md}逐条给出一手 URL、类型与读取范围。
+本文公式以明确假设下的独立推导为主；引用表示理论来源或应用背景，
+并不表示复现了某篇论文的全部算法、参数和实验。
+厂商手册用于识别底盘结构、术语及适用边界，不用于虚构未公开的飞控内部参数。
+
+\section{坐标、旋转与刚体积分}
+\subsection{统一约定}
+世界系 $W$ 的 $z$ 轴向上，$\vct g^W=-g\e_3$，$g>0$。
+机体系 $B$ 的 $x,y,z$ 分别向前、向左、向上。
+$R=R_{WB}\in\SO$ 将机体系向量变到世界系；$\vct p^W$ 为所选机体参考点的位置。
+车体参考点取后轴中点，四旋翼参考点取质心；二者不能混用。
+$\sk{\vct a}\vct b=\vct a\times\vct b$。
+$\vct\omega^B$ 是机体系角速度，$\vct\upsilon^B=R^T\dot{\vct p}^W$。
+
+相机 $C$ 使用右、下、前光学坐标。固定外参为 $R_{BC}$ 和 $\vct\ell^B$，
+后者从机体参考点指向光心。示例安装为
+\begin{equation}
+ R_{BC}=\begin{bmatrix}0&0&1\\-1&0&0\\0&-1&0\end{bmatrix}.
+\end{equation}
+对时刻 $a,b$ 定义
+\begin{equation}\label{eq:relative}
+ R_{ab}^{B}=R_a^TR_b,\qquad
+ \vct\tau_{ab}^{B}=R_a^T(\vct p_b^W-\vct p_a^W).
+\end{equation}
+平移始终用\emph{第一帧}坐标表示。角位移为
+$\vct\epsilon=\operatorname{Log}(R_{ab}^{B})^\vee$；
+$\vct\tau$ 表示位移而不是力矩，力矩另记 $\vct M$。
+
+\subsection{恒定机体系速度的有限积分不是额外载具约束}
+若一小段内机体系 $\vct\omega,\vct\upsilon$ 均常量，则
+\begin{align}
+ \dot R&=R\sk{\vct\omega},& \dot{\vct p}&=R\vct\upsilon,\\
+ R_{ab}&=\operatorname{Exp}(\sk{\vct\epsilon}),&
+ \vct\tau_{ab}&=\Delta t\,J_l(\vct\epsilon)\vct\upsilon,
+ \quad\vct\epsilon=\vct\omega\Delta t,\label{eq:twist}
+\end{align}
+其中直接积分 Rodrigues 公式得到
+\begin{equation}
+ J_l(\vct\epsilon)=I+
+ \frac{1-\cos\theta}{\theta^2}\sk{\vct\epsilon}
+ +\frac{\theta-\sin\theta}{\theta^3}\sk{\vct\epsilon}^2,
+ \qquad\theta=\norm{\vct\epsilon}.
+\end{equation}
+零角用连续极限。式\eqref{eq:twist}说明有限位移需要旋转积分，
+并不使任意刚体的 $\vct\omega$ 与 $\vct\upsilon$ 自动成为函数关系。
+
+\section{常规轮式车辆：接触约束到有限运动}
+\subsection{从每个轮的接触速度开始}
+考虑平面运动，车体速度为 $(v_x,v_y,r)$，$r=\dot\psi$。
+第 $i$ 个车轮位于 $(x_i,y_i)$，转向角为 $\delta_i$，轮半径为 $a_i$。
+轮平面的纵向和法向单位向量为
+\begin{equation}
+ \vct t_i=\begin{bmatrix}\cos\delta_i\\\sin\delta_i\end{bmatrix},\qquad
+ \vct n_i=\begin{bmatrix}-\sin\delta_i\\\cos\delta_i\end{bmatrix}.
+\end{equation}
+刚体接触点的平面速度是
+\begin{equation}
+ \vct u_i=\begin{bmatrix}v_x-r y_i\\v_y+r x_i\end{bmatrix}.
+\end{equation}
+理想无侧滑与纵向纯滚动给出
+\begin{equation}\label{eq:wheel}
+ \boxed{\vct n_i^T\vct u_i=0},\qquad
+ \vct t_i^T\vct u_i=a_i\Omega_i.
+\end{equation}
+式\eqref{eq:wheel}是速度层面的 Pfaff 约束，一般不能积分为仅含位置的代数约束。
+它不是“永远不能向侧方移动”：前进--转弯--后退的组合可以改变侧向位置。
+全向轮的滚子引入额外自由度，不满足同一侧向禁止条件。
+
+\subsection{后轴中点的自行车模型与 Ackermann 几何}
+后轮位于 $x_i=0$ 且不转向，式\eqref{eq:wheel}首先给出 $v_y=0$。
+将两个前轮等效为 $(L,0)$ 处的一轮，得到
+\begin{equation}
+ -v\sin\delta+Lr\cos\delta=0,
+ \qquad\boxed{r=\frac{v}{L}\tan\delta}.\label{eq:bicycle}
+\end{equation}
+因此
+\begin{equation}
+ \dot x=v\cos\psi,\quad \dot y=v\sin\psi,\quad
+ \dot\psi=\frac{v}{L}\tan\delta.\label{eq:carode}
+\end{equation}
+轮距为 $W$，前左、前右轮的实际角度分别满足
+\begin{equation}\label{eq:ackermann}
+ \tan\delta_L=\frac{\tan\delta}{1-\frac{W}{2L}\tan\delta},\qquad
+ \tan\delta_R=\frac{\tan\delta}{1+\frac{W}{2L}\tan\delta}.
+\end{equation}
+这来自四轮速度方向都垂直于各自到瞬时转动中心的连线。
+对左转，$\cot\delta_R-\cot\delta_L=W/L$，内轮转向角更大。
+实现使用 \texttt{atan2}，并排除转动中心落入前轮之间的极端几何。
+AgileX HUNTER2.0 手册明确采用 Ackermann 底盘\cite{hunter}，
+但本仓库的尺寸和速度为合成参数，不是该产品的识别结果。
+
+必须注意：若 $\delta$ 未观测，式\eqref{eq:bicycle}不让 $r$ 唯一决定 $v$。
+对 $v\ne0$，不同速度可由不同转角补偿；转角和转角速度上限只能进一步形成可行域。
+普通 Ackermann 车在该模型中 $v=0$ 时不能原地转动，而差速底盘可以。
+
+\subsection{参考点改变时，侧向速度约束也改变}
+若质心比后轴中点前移 $l_r$，则
+\begin{equation}
+ \vct\upsilon_{\mathrm{COM}}^B=
+ \begin{bmatrix}v\\r l_r\\0\end{bmatrix},\qquad
+ \beta=\arctan\!\left(\frac{l_r}{L}\tan\delta\right).
+\end{equation}
+这里 $\beta$ 是\emph{无轮胎侧滑时质心速度与车体的几何夹角}，
+不能误判为轮胎侧滑。质心速率为 $v/\cos\beta$（前进工况）。
+在相机或质心上机械地套用 $v_y=0$ 会制造错误观测。
+
+\subsection{圆弧的弦方向与半偏航角}
+对恒定 $v,r$，从第一帧机体系积分得
+\begin{equation}\label{eq:arc}
+ \vct\tau^B=
+ \begin{bmatrix}(v/r)\sin\theta\\(v/r)(1-\cos\theta)\\0\end{bmatrix}
+ =\frac{2v}{r}\sin\frac\theta2
+ \begin{bmatrix}\cos(\theta/2)\\\sin(\theta/2)\\0\end{bmatrix},
+ \qquad\theta=r\Delta t.
+\end{equation}
+$r\to0$ 时 $\vct\tau^B\to(v\Delta t,0,0)^T$。
+对前进且 $|\theta|<\pi$ 的非零短圆弧，弦方向 $\phi=\theta/2$。
+倒车时有方向反转；若只用无向轴，等式按模 $\pi$ 理解。
+这解释了基于局部圆运动的一点法先验\cite{onepoint,ijcv}，但不是所有道路运动的精确律。
+
+恒曲率即使速度变化，也仍沿同一圆，因而保留弦关系；
+曲率变化时通常不精确。尤其不能把瞬时 $v_y=0$ 错写为整段位移 $\tau_y=0$。
+实现以 $\operatorname{sinc}$ 形式避免小角数值相消：
+\begin{equation}
+ \tau_x=v\Delta t\operatorname{sinc}(\theta/\pi),\quad
+ \tau_y=\frac{v\Delta t\theta}{2}
+     \operatorname{sinc}^2(\theta/(2\pi)),
+ \quad\operatorname{sinc}(z)=\frac{\sin(\pi z)}{\pi z}.
+\end{equation}
+
+\subsection{何时必须放松无滑移模型}
+高速转弯、低附着路面、冲击、制动和悬架起伏都会削弱上述条件。
+以质心为参考、忽略纵向耦合力的平面动力学平衡写成
+\begin{align}
+ m(\dot v_y+r v_x)&=F_{yf}+F_{yr},\\
+ I_z\dot r&=l_fF_{yf}-l_rF_{yr}.
+\end{align}
+在 $v_x$ 远离零、小角和小侧偏范围内，可使用局部线性轮胎近似
+\begin{equation}
+ F_{yf}=C_f\left(\delta-\frac{v_y+l_f r}{v_x}\right),\qquad
+ F_{yr}=-C_r\frac{v_y-l_r r}{v_x}.
+\end{equation}
+此处 $C_f,C_r>0$ 为车轴等效侧偏刚度；大侧偏饱和、载荷转移和倒车不在此线性式的默认范围内。
+平路准静态的 $|a_y|\lesssim\mu g$ 只是附着包络近似，不应当作任意动态工况的精确等式。
+运动学与动力学模型选型的资料入口见\cite{kong}；本项目不声称已实现完整轮胎动力学。
+
+\section{差速与四轮滑移转向不能混为一谈}
+两个理想驱动轮的左右线速度为 $u_L,u_R$、横向距离为 $W$，则
+\begin{equation}\label{eq:diff}
+ v=\frac{u_R+u_L}{2},\qquad r=\frac{u_R-u_L}{W}.
+\end{equation}
+当 $u_L=-u_R$ 时，$v=0$ 而 $r\ne0$。
+但四个固定朝向的常规车轮位于 $x=\pm a$ 时，
+无侧滑条件同时要求
+\begin{equation}\label{eq:skid}
+ v_y+a r=0,\qquad v_y-a r=0
+ \quad\Longrightarrow\quad v_y=0,\ r=0\quad(a\ne0).
+\end{equation}
+因此四轮滑移转向底盘转弯时必有接触处横向滑移，不能要求四轮全都满足理想纯滚动。
+常用降阶近似为
+\begin{equation}
+ r\approx\frac{u_R-u_L}{W_{\mathrm{eff}}},
+\end{equation}
+其中有效轮距 $W_{\mathrm{eff}}$ 是等效参数，受路面、速度、轮胎和路径曲率影响\cite{skidpaper}。
+Clearpath 的 Husky A200 手册也在运动方程中区分有效轮距\cite{husky}。
+本实验只用一个合成的有效轮距展示偏差，\emph{不}将其视为普适轮胎物理模型。
+
+\section{相机外参与杆臂：不可省略的耦合}
+固定安装时
+\begin{equation}
+ R_{WC}=R R_{BC},\qquad
+ \vct p_C^W=\vct p_B^W+R\vct\ell^B.
+\end{equation}
+一次、二次求导分别得到
+\begin{align}
+ \boxed{\vct\upsilon_C^C=R_{BC}^T
+ (\vct\upsilon_B^B+\vct\omega^B\times\vct\ell^B)},\label{eq:leverv}\\
+ \vct a_C^W=\vct a_B^W+R\left(
+ \dot{\vct\omega}^B\times\vct\ell^B+
+ \vct\omega^B\times(\vct\omega^B\times\vct\ell^B)\right).\label{eq:levera}
+\end{align}
+其中角速度导数按机体系分量理解。
+对两帧做精确代数变换，有
+\begin{align}
+ R_{ab}^C&=R_{BC}^TR_{ab}^B R_{BC},\\
+ \boxed{\vct\tau_{ab}^C=R_{BC}^T
+ \left(\vct\tau_{ab}^B+(R_{ab}^B-I)\vct\ell^B\right)}.\label{eq:leverfinite}
+\end{align}
+所以车体参考点纯旋转时，相机通常并非纯旋转；原地偏航也可能带来光心平移。
+小位移时杆臂项约为 $\sk{\vct\epsilon}\vct\ell$。
+云台、减振架形变或滚动快门下，必须另行建模时变外参或行曝光时间，不能继续无条件使用固定刚体式。
+
+\section{四旋翼：姿态耦合加速度而非唯一决定速度}
+\subsection{旋翼输入与力矩分配}
+选择机体 $+z$ 为推力方向，每个旋翼推力 $f_i=k_f\Omega_i^2$。
+以十字布局 $+x,+y,-x,-y$ 编号，臂长 $l$，反扭矩与推力比为 $k_M$，有
+\begin{equation}\label{eq:allocation}
+ \begin{bmatrix}f\\M_x\\M_y\\M_z\end{bmatrix}
+ =\begin{bmatrix}
+ 1&1&1&1\\0&l&0&-l\\-l&0&l&0\\k_M&-k_M&k_M&-k_M
+ \end{bmatrix}
+ \begin{bmatrix}f_1\\f_2\\f_3\\f_4\end{bmatrix},\qquad
+ 0\le f_i\le f_{\max}.
+\end{equation}
+反扭矩正负取决于电机旋转方向，本文固定如矩阵所示，其他编号必须同步换矩阵。
+旋翼上限意味着总推力与力矩不能任意独立增大；
+不能只检查 $f\le4f_{\max}$ 而不检查各旋翼反解。
+
+Newton--Euler 方程为
+\begin{align}
+ \dot{\vct p}^W&=\vct v^W,\qquad \dot R=R\sk{\vct\omega},\\
+ m\dot{\vct v}^W&=m\vct g^W+fR\e_3+\vct F_{\mathrm{ext}}^W,\label{eq:quadtrans}\\
+ J\dot{\vct\omega}+\vct\omega\times J\vct\omega
+ &=\vct M+\vct M_{\mathrm{ext}}.\label{eq:quadrot}
+\end{align}
+这与几何四旋翼模型\cite{lee}一致，但要注意该文的轴向/重力正号不同，不能逐式照抄正负号。
+四个旋翼控制六维构型，是欠驱动系统；欠驱动并不意味着当前六维速度必须落在某个固定低维线性子空间。
+
+\subsection{消去总推力得到两个独立方向约束}
+记 $\vct b_3=R\e_3$，$\Pi_{\vct b_3}=I-\vct b_3\vct b_3^T$。
+在外力为零的理想模型中，由式\eqref{eq:quadtrans}得
+\begin{equation}\label{eq:thrust}
+ \boxed{\Pi_{\vct b_3}(\vct a^W-\vct g^W)=0}.
+\end{equation}
+该三维投影秩为二；等价的无冗余残差为
+\begin{equation}
+ S_{xy}R^T(\vct a^W-\vct g^W)=0,\qquad
+ S_{xy}=\begin{bmatrix}1&0&0\\0&1&0\end{bmatrix}.
+\end{equation}
+在 $f>0$ 时还必须满足正向推力条件
+\begin{equation}
+ \vct b_3=\frac{\vct a^W-\vct g^W}{\norm{\vct a^W-\vct g^W}},\qquad
+ f=m\norm{\vct a^W-\vct g^W}.
+\end{equation}
+只有投影等式不能排除反向推力；自由落体 $f=0$ 时方向条件退化。
+
+\subsection{阻力、风与所谓“倾斜就朝前飞”}
+包含体轴阻力时，一种低阶近似为
+\begin{equation}
+ \vct F_d^W=-R D_B R^T(\vct v^W-\vct w^W),
+\end{equation}
+其中 $D_B$ 单位为 kg/s，$\vct w^W$ 为风速。
+相关含旋翼阻力的平坦性研究见\cite{faessler}；本文仿真仅使用
+$D_B=dI$、零风的\emph{简化各向同性线性阻力}，没有复现该论文完整气动项。
+正确约束应把 $\vct F_d^W/m$ 从比加速度中扣除。
+只有稳定、匀速、外力可预测等附加条件下，倾斜方向才与速度方向产生较强关系。
+飞控闭环的这种统计相关不能改写成任何工况都成立的几何等式。
+
+三个反例直接来自方程：
+水平悬停时可施加偏航力矩而保持质心不动；
+无阻力、水平推力平衡重力时，初始任意水平速度会被保持，允许侧飞或倒飞；
+固定倾斜且 $\vct\omega=0$ 时，仍可具有持续水平加速度。
+侧飞反例采用非零初始速度只是展示一个可达状态；从静止出发可先倾斜加速，再回到水平姿态。
+
+\subsection{更高阶的耦合：加加速度与角速度}
+令 $\vct c=\vct a-\vct g$，$c=\norm{\vct c}>0$，
+$\vct j=\dot{\vct a}$ 为加加速度。在无外力条件下
+\begin{equation}
+ \dot{\vct b}_3=\frac{\Pi_{\vct b_3}\vct j}{c},\qquad
+ \vct\omega_\perp^W=\vct b_3\times\dot{\vct b}_3.\label{eq:jerk}
+\end{equation}
+这是因为 $\dot{\vct b}_3=\vct\omega^W\times\vct b_3$，
+因而沿推力轴的自旋分量尚未确定。
+若 $R=[\vct b_1,\vct b_2,\vct b_3]$，则
+\begin{equation}
+ \omega_x^B=-\vct b_2^T\dot{\vct b}_3,\qquad
+ \omega_y^B=\vct b_1^T\dot{\vct b}_3.
+\end{equation}
+给定位置轨迹和一个航向参数 $\psi$，令
+$\vct h=(\cos\psi,\sin\psi,0)^T$，可选
+\begin{equation}
+ \vct b_2=\frac{\vct b_3\times\vct h}{\norm{\vct b_3\times\vct h}},\qquad
+ \vct b_1=\vct b_2\times\vct b_3.
+\end{equation}
+叉积为零时该构造奇异；$\psi$ 是该构造的航向参数，
+不要在任意大倾角下将它与任一 Euler 偏航定义或 $\omega_z^B$ 混同。
+随后 $\sk{\vct\omega}=R^T\dot R$、式\eqref{eq:quadrot}可反解角速度和力矩。
+这是平坦性思路，但还须验证旋翼饱和、光滑性和气动假设，不能把任意数学轨迹认定为可飞。
+
+\section{单目尺度：无尺度约束与带量纲先验}
+\subsection{齐次无滑移条件本身不创造米制尺度}
+纯视觉通常允许整体相似变换，位置、速度、加速度共同乘 $s>0$ 而图像不变。
+$S_{yz}\vct\upsilon_B=0$ 在 $\vct\upsilon_B\mapsto s\vct\upsilon_B$ 下保持不变，
+因此其本身不能确定 $s$。
+只知道轴距 $L$ 而不知道实际转角，通常也不能从式\eqref{eq:bicycle}解出真实速度。
+若真实转角另有测量，则 $v=Lr/\tan\delta$ 可提供条件尺度，
+但这是新增传感信息，且直行、低角速度时病态。
+
+\subsection{已知米制前向杆臂与转弯：尺度例外}
+设 VO 输出 $\bar{\vct\tau}_C$，真实平移为 $s\bar{\vct\tau}_C$。
+对符合式\eqref{eq:arc}的后轴圆弧，定义
+\begin{equation}
+ \vct n_\theta=(-\sin(\theta/2),\cos(\theta/2),0)^T,
+ \qquad \vct n_\theta^T\vct\tau_B=0.
+\end{equation}
+将式\eqref{eq:leverfinite}代入，得到一个标量约束
+\begin{equation}\label{eq:carscale}
+ \underbrace{\vct n_\theta^T R_{BC}\bar{\vct\tau}_C}_{\alpha}s
+ =\underbrace{\vct n_\theta^T(R_z(\theta)-I)\vct\ell}_{\beta}
+ =2\ell_x\sin(\theta/2).
+\end{equation}
+故 $\alpha\ne0$ 时 $s=\beta/\alpha$。
+这正是车辆已知安装几何可能打破单目尺度自由度的物理来源\cite{absolutescale}。
+\emph{米制杆臂是外部标定先验}，不是视觉凭空产生米。
+
+当 $\theta=0$ 或 $\ell_x=0$ 时，上述标量尺度约束退化；
+仅有横向或竖向杆臂不能通过这个平面圆弧约束恢复尺度。
+接近退化时，角度、方向与外参噪声被放大：
+\begin{equation}
+ \delta s\simeq\frac{\delta\beta}{\alpha}
+ -\frac{\beta}{\alpha^2}\delta\alpha.
+\end{equation}
+局部尺度漂移、未知杆臂、侧滑或曲率变化也会破坏简单两帧解。
+真实应用需要窗口化、协方差建模与条件数检查，而非逐帧盲目相除。
+
+\subsection{四旋翼模型下的条件尺度可观性}
+先明确附加条件：相机位于质心，或式\eqref{eq:levera}被完整建模；
+相机--机体旋转已标定；时间单位已知；外力为零。
+以 $\bar{\vct a}_k$ 表示同一视觉尺度下的加速度，若世界系重力向量\emph{另外已知}，
+则式\eqref{eq:thrust}给出
+\begin{equation}
+ A_k s=\vct b_k,\qquad
+ A_k=\Pi_{\vct b_{3,k}}\bar{\vct a}_k,
+ \quad\vct b_k=\Pi_{\vct b_{3,k}}\vct g.
+\end{equation}
+最小二乘解为
+\begin{equation}\label{eq:quadscale}
+ s=\frac{\sum_k A_k^T\vct b_k}{\sum_k A_k^TA_k},
+ \qquad\sum_k A_k^TA_k>0,\quad s>0.
+\end{equation}
+悬停、无加速度匀速等情况缺乏激励；忽略阻力可能导致有偏尺度。
+实验 E06\emph{明确额外给定重力方向}，不能把其输出宣传为一般无 IMU 单目尺度恢复算法。
+给定图像坐标中的重力方向不是“知道 $g=9.81$”的同义词。
+
+若重力方向也未知，可形式上联合求解
+\begin{equation}\label{eq:unknown_g}
+ \begin{bmatrix}
+ \Pi_1\bar{\vct a}_1&-\Pi_1\\
+ \vdots&\vdots\\
+ \Pi_N\bar{\vct a}_N&-\Pi_N
+ \end{bmatrix}
+ \begin{bmatrix}s\\\vct g\end{bmatrix}=0,
+ \qquad\norm{\vct g}=g_0.
+\end{equation}
+理想无噪声且矩阵秩为三时，四维未知量只有一维零空间，
+再用 $g_0$ 和正尺度条件归一化；秩低于三则不唯一。
+固定推力轴通常不足以联合确定全部重力分量。
+这是模型可观性分析，不是本仓库已完成的鲁棒联合估计器。
+若存在未知外力，重力/外力与尺度可能相互混淆。
+
+视觉二阶差分的噪声幅度随 $\Delta t^{-2}$ 放大；从同一位姿窗口算出的姿态和加速度还相互相关。
+对其直接套用无误差自变量的最小二乘会有统计偏差。
+真正应用需平滑窗口、联合状态估计、误差传播以及独立实测验证。
+
+\section{如何作为 ESKF 或优化的软约束}
+\subsection{后轴非完整约束的右扰动雅可比}
+定义 $S_{yz}=\begin{bmatrix}0&1&0\\0&0&1\end{bmatrix}$，
+$\vct h_v=S_{yz}R^T\vct v^W$。
+采用右局部扰动 $R_{\rm true}=R\operatorname{Exp}(\sk{\delta\vct\theta})$，则
+\begin{align}
+ R_{\rm true}^T(\vct v+\delta\vct v)
+ &\simeq R^T\vct v+\sk{R^T\vct v}\delta\vct\theta+R^T\delta\vct v,\\
+ H_\theta&=S_{yz}\sk{R^T\vct v},\qquad H_v=S_{yz}R^T.\label{eq:jacobian}
+\end{align}
+这里第二个分量 $v_z=0$ 还依赖局部平面/无升降假设，不是单凭轮胎侧向滚动就能在跳跃时保证的。
+若状态速度定义在相机系，应先由式\eqref{eq:leverv}计算
+\begin{equation}
+ \vct h_v=S_{yz}\left(R_{BC}\vct\upsilon_C^C+
+ \sk{\vct\ell}R_{BC}\vct\omega_C^C\right),
+\end{equation}
+而不是把相机横向速度直接置零。
+
+类似地，四旋翼可使用二维残差
+\begin{equation}
+ \vct h_f=S_{xy}R^T
+ \left(s\bar{\vct a}-\vct g-\vct F_{\mathrm{ext}}/m\right).
+\end{equation}
+固定世界系力模型下，其 $H_\theta=S_{xy}\sk{R^T(\cdots)}$，
+$H_s=S_{xy}R^T\bar{\vct a}$；若阻力本身依赖姿态、速度，则必须追加相应导数。
+三个分量的投影残差秩为二，直接假设其协方差是满秩各向同性会造成冗余或统计不一致。
+
+\subsection{残差不应被设成零噪声硬真值}
+把模型写成伪观测 $\vct z=0=\vct h(\vct x)+\vct\nu_m$，
+$\vct\nu_m\sim\mathcal N(0,R_m)$，$R_m$ 包含侧滑、风、外参误差及离散化误差。
+创新为 $\vct r=\vct z-\vct h$，其协方差为
+\begin{equation}
+ S=HPH^T+R_m,\qquad \gamma=\vct r^T S^{-1}\vct r.
+\end{equation}
+适当的创新门控、鲁棒损失或模式切换可降低失配影响，
+但门控不是保证无偏的万能方法，选择偏差也必须评估\cite{priors}。
+
+如果姿态、方向和加速度来自同一图像窗口，不可把它们当成相互独立的新传感器重复更新。
+需要维护交叉协方差，或把约束统一放进同一个残差/状态窗口。
+本文只给接口及解析雅可比检验，没有修改 FastMono 的 ESKF，也不引入永久地图点或额外传感器。
+
+\section{可重入仿真实验与可证伪边界}
+\subsection{实验与代码对应}
+所有公式均采用 SI 单位；配置的角度字段以 degree 命名，计算前转换为 rad。
+\texttt{configs/default.toml}给出 $T=6$ s、采样间隔 $0.02$ s、车速 $3$ m/s、
+轴距 $2.6$ m、等效转角 $15^\circ$、转角变化率 $4^\circ$/s。
+四旋翼参数为质量 $1$ kg、臂长 $0.2$ m、惯量对角元 $(0.01,0.01,0.02)$ kg\,m$^2$、
+每旋翼推力上限 $5$ N、初始倾角 $15^\circ$、阻力系数 $0.2$ kg/s。
+这些是\emph{演示参数，不是任何厂商产品标定值}。
+
+\begin{longtable}{p{.10\linewidth}p{.37\linewidth}p{.40\linewidth}}
+\caption{实验、主检验与解释范围}\label{tab:experiments}\\
+\toprule
+编号 & 脚本函数与检验 & 不能推出的结论 \\
+\midrule\endfirsthead
+\toprule 编号 & 脚本函数与检验 & 不能推出的结论 \\
+\midrule\endhead
+E01 & \texttt{car\_circle}：DOP853 与稳定圆弧解析式；四轮接触残差 & 解析式吻合不是实车建模精度 \\
+E02 & \texttt{finite\_chord}：恒曲率、变曲率、错误初始航向先验 & 半偏航不是任意帧间位移方向 \\
+E03 & \texttt{skid\_steer}：固定四轮的约束秩和必要侧滑 & 有效轮距不是通用无滑移几何宽度 \\
+E04 & \texttt{lever\_arm}：世界坐标直接计算与有限外参式交叉验证 & 车体纯旋转不等于光心纯旋转 \\
+E05 & \texttt{quadrotor}：完整位姿/速度刚体积分、悬停偏航、侧飞、倾斜、阻力失配 & 飞行方向不由偏航或角速度唯一决定 \\
+E06 & \texttt{scale\_observability}：转弯杆臂条件尺度、已知重力条件尺度及悬停退化 & 未完成一般无 IMU 联合尺度算法 \\
+E07 & \texttt{prior\_monte\_carlo}：原始方向、硬先验、软先验、创新门控的 RMSE & 位姿观测层实验，不是像素匹配/外点检测基准 \\
+\bottomrule
+\end{longtable}
+
+E07 每种侧滑偏差 $0,2,5,10^\circ$ 使用 $20000$ 次试验。
+方向观测标准差为 $2^\circ$，偏航观测标准差 $0.5^\circ$，
+假定的模型不确定性标准差 $0.5^\circ$，门限为创新标准差的三倍。
+模型不确定性用于融合权重，系统性侧滑作为独立可控失配变量；
+并不声称轮胎侧滑真的服从这一高斯模型。
+若方向观测 $y$ 方差为 $\sigma_y^2$，先验中心为 $q=\theta_{\rm obs}/2$，
+设 $\sigma_q^2=\sigma_\theta^2/4+\sigma_m^2$，则
+\begin{equation}
+ \hat\phi_{\rm soft}=y+
+ \frac{\sigma_y^2}{\sigma_y^2+\sigma_q^2}\operatorname{wrap}(q-y).
+\end{equation}
+创新超限时门控版本退回原始 $y$。中等失配可能尚未被拒绝而恶化 RMSE，
+所以实验必须同时报告改善与损害，不能只展示有利工况。
+
+\subsection{重复执行、并发与验证}
+实验核心不写文件、不修改全局随机种子；配置为冻结数据类。
+E07 使用由根种子和固定实验编号组成的独立随机流\cite{numpy}。
+输出写入本次专属的隐藏暂存目录，全部验证通过并写好清单后，
+在同一文件系统内重命名为唯一运行目录；失败只清除本次暂存目录。
+异常断电可能留下未发布暂存目录，因此原子可见性不等于断电持久性保证。
+
+清单记录解析后的全部配置、源码哈希、版本、数组形状/类型/内容哈希和指标。
+同一环境的重复执行检验数值数组一致，不要求 ZIP 时间元数据或 PNG 字节恒等。
+跨平台浮点最后几位不作逐位保证。积分使用 SciPy \texttt{solve\_ivp} 的 DOP853，
+检查成功标志、有限值和物理参数边界\cite{scipy}。
+
+测试包含圆弧解析解、四旋翼常加速度/线性阻力解析解、任意三维外参、
+杆臂速度与加速度差分、右扰动雅可比、尺度退化、进程并发和强制入库拦截。
+生成的 NPZ、JSON、PNG、PDF 和日志仅保留在忽略目录。
+LaTeX 可独立编译，不依赖仓库外下载的论文 PDF 或预生成插图；
+绘图和正式数值结果的运行方式及最近一次实际检查结果见 README 与 PROGRESS。
+
+\section{结论与下一步研究边界}
+对道路车，最直接可用的是参考点明确的非完整约束，以及短时间恒曲率时的弦--半偏航关系；
+对四轮滑移底盘必须显式容纳滑移；
+对四旋翼，更基本的耦合是姿态--比加速度和角速度--加加速度，而非机头--速度。
+相机杆臂既可能制造不容忽略的平移，也可能在满足带量纲标定和运动激励时提供尺度信息。
+
+因此，应将模型先验作为带有效域和不确定性的辅助约束，而不是替代图像证据的硬真值。
+尚需实车标定、道路侧滑/风扰数据、像素噪声传播、未知重力联合估计和完整 VO 集成的独立验证。
+这些未完成项不能由理想仿真误差很小来代替。
+
+\begin{thebibliography}{99}
+\bibitem{campion} Campion G, Bastin G, d'Andr\'ea-Novel B.
+Structural properties and classification of kinematic and dynamic models of wheeled mobile robots.
+IEEE Transactions on Robotics and Automation, 1996, 12(1):47--62.
+\url{https://doi.org/10.1109/70.481750}.
+\bibitem{onepoint} Scaramuzza D, Fraundorfer F, Siegwart R.
+Real-Time Monocular Visual Odometry for On-Road Vehicles with 1-Point RANSAC.
+ICRA, 2009:4293--4299. \url{https://rpg.ifi.uzh.ch/docs/ICRA09_scaramuzza.pdf}.
+\bibitem{ijcv} Scaramuzza D.
+1-Point-RANSAC Structure from Motion for Vehicle-Mounted Cameras by Exploiting Non-holonomic Constraints.
+IJCV, 2011, 95:74--85. \url{https://doi.org/10.1007/s11263-011-0441-3}.
+\bibitem{absolutescale} Scaramuzza D, Fraundorfer F, Pollefeys M, Siegwart R.
+Absolute Scale in Structure from Motion from a Single Vehicle Mounted Camera by Exploiting Nonholonomic Constraints.
+ICCV, 2009. \url{https://rpg.ifi.uzh.ch/docs/ICCV09_scaramuzza.pdf}.
+\bibitem{priors} Scaramuzza D, Censi A, Daniilidis K.
+Exploiting Motion Priors in Visual Odometry for Vehicle-Mounted Cameras with Non-holonomic Constraints.
+IROS, 2011. \url{https://rpg.ifi.uzh.ch/docs/IROS11_scaramuzza.pdf}.
+\bibitem{kong} Kong J, Pfeiffer M, Schildbach G, Borrelli F.
+Kinematic and dynamic vehicle models for autonomous driving control design.
+IEEE Intelligent Vehicles Symposium, 2015:1094--1099.
+\url{https://doi.org/10.1109/IVS.2015.7225830}.
+\bibitem{skidpaper} Wang T, Wu Y, Liang J, Han C, Chen J, Zhao Q.
+Analysis and Experimental Kinematics of a Skid-Steering Wheeled Robot Based on a Laser Scanner Sensor.
+Sensors, 2015, 15(5):9681--9702. \url{https://doi.org/10.3390/s150509681}.
+\bibitem{lee} Lee T, Leok M, McClamroch N H.
+Control of Complex Maneuvers for a Quadrotor UAV using Geometric Methods on SE(3).
+arXiv:1003.2005, 2010; revised 2011. \url{https://arxiv.org/abs/1003.2005}.
+\bibitem{faessler} Faessler M, Franchi A, Scaramuzza D.
+Differential Flatness of Quadrotor Dynamics Subject to Rotor Drag for Accurate Tracking of High-Speed Trajectories.
+IEEE Robotics and Automation Letters, 2018, 3(2):620--626.
+\url{https://doi.org/10.1109/LRA.2017.2776353}.
+\bibitem{hunter} AgileX Robotics. HUNTER2.0 User Manual.
+\url{https://agilexrobotics.gitbook.io/hunter-2.0/1-hunter-2.0-introduction}.
+\bibitem{husky} Clearpath Robotics. Husky A200 User Manual.
+\url{https://docs.clearpathrobotics.com/docs_robots/outdoor_robots/husky/a200/user_manual_husky/}.
+\bibitem{numpy} NumPy Developers. Parallel random number generation.
+\url{https://numpy.org/doc/stable/reference/random/parallel.html}.
+\bibitem{scipy} SciPy Developers. solve\_ivp.
+\url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html}.
+\end{thebibliography}
+\end{document}

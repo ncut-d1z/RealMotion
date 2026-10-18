@@ -1,0 +1,5 @@
+# Fast CI profile. All other keys use the documented Config defaults.
+seed = 20261018
+duration_s = 1.0
+sample_period_s = 0.05
+trials = 1000
