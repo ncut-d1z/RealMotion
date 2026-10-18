@@ -119,4 +119,4 @@ README 安装说明随后在纯文档提交 `27c80639e746f069697b509d0c20c752dcb
 - [x] 基于最新 main 原文修改 `theory.tex`：补充坐标系、杆臂、轮速、轮胎刚度、四旋翼推力、尺度、ESKF 协方差、Monte Carlo RMSE 等概念的逐项释义，明确大多数公式的物理结论与适用前提。
 - [x] 将参考文献格式改为 natbib 数字、上标、方括号；扩充表 1 与实验概览表 caption，新增 E07 四种先验误差数值表并按行加粗最低 RMSE。
 - [x] 复核修复了 E07 的 10° 工况最小误差加粗对象和轮距单位问题；正文代码提交 `0f05f69ce9588c7775b0301bf8a7b43d5c5ec837`。
-- [ ] 本轮 CI 的 XeLaTeX 和 Python 作业验证结果与可能的排版/引用警告，待查询最新运行日志。
+- [x] GitHub Actions 运行 `39123269065` 的 Python 与 XeLaTeX 作业均 success（确认该工作流针对 `0f05f69` 提交）；<https://github.com/ncut-d1z/RealMotion/actions/runs/39123269065>。仍需人工细读生成 PDF 的细部版式，CI 成功不等于完成学术审稿。
